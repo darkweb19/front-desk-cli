@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -14,6 +15,19 @@ type Entry struct {
 }
 
 func main() {
+	configDir, err := os.UserConfigDir()
+	fmt.Println(configDir)
+	appDir := filepath.Join(configDir, "tm")
+	fmt.Println(appDir)
+	tasksFile := filepath.Join(appDir, "tasks.json")
+	fmt.Println(tasksFile)
+
+	err = os.MkdirAll(appDir, 0755)
+	if err != nil {
+		fmt.Println("Error creating app directory:", err)
+		return
+	}
+
 	if len(os.Args) < 2 {
 		fmt.Println("Please provide an argument.")
 		return
@@ -21,7 +35,7 @@ func main() {
 
 	entries := []Entry{}
 
-	file, err := os.Open("tasks.json")
+	file, err := os.Open(tasksFile)
 
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -40,11 +54,11 @@ func main() {
 			file.Close()
 			return
 		}
-		
+
 	}
 	entries = append(entries, Entry{Time: time.Now(), Message: strings.Join(os.Args[1:], " ")})
 
-	file,err = os.Create("tasks.json") 
+	file, err = os.Create(tasksFile)
 	if err != nil {
 		fmt.Println("Error creating file:", err)
 		return
