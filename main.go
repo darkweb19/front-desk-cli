@@ -58,21 +58,11 @@ func main() {
 	}
 	entries = append(entries, Entry{Time: time.Now(), Message: strings.Join(os.Args[1:], " ")})
 
-	file, err := os.Create(tasksFile)
+	err = saveEntries(tasksFile, entries)
 	if err != nil {
-		fmt.Println("Error creating file:", err)
+		fmt.Println("Error saving entries:", err)
 		return
 	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	err = encoder.Encode(entries)
-	if err != nil {
-		fmt.Println("Error encoding JSON:", err.Error())
-		return
-	}
-
 	fmt.Println(entries)
 
 }
@@ -100,4 +90,22 @@ func loadEntries(tasksFile string) ([]Entry, error) {
 	}
 	return entries, nil
 
+}
+
+
+func saveEntries(tasksFile string, entries []Entry) error {
+	file, err := os.Create(tasksFile)
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+	defer file.Close()
+	
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	err = encoder.Encode(entries)
+	if err != nil {
+		return fmt.Errorf("error encoding JSON: %v", err)
+	}
+
+	return nil
 }
