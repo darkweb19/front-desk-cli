@@ -36,6 +36,7 @@ func main() {
 		return
 	}
 
+	// generate command
 	if os.Args[1] == "--generate" {
 
 
@@ -46,7 +47,13 @@ func main() {
 			fmt.Println("Error loading entries:", err)
 			return
 		}
-		fmt.Println("Entries loaded:", entries)
+
+		err = generateReport(entries)
+		if err != nil {
+			fmt.Println("Error generating report:", err)
+			return
+		}
+
 		return
 	}
 
@@ -107,5 +114,16 @@ func saveEntries(tasksFile string, entries []Entry) error {
 		return fmt.Errorf("error encoding JSON: %v", err)
 	}
 
+	return nil
+}
+
+
+
+func generateReport ( entries []Entry) error {
+
+
+		for _, entry := range entries {
+			fmt.Printf("%s: %s\n", entry.Time.Format("15:04"), entry.Message)
+		}
 	return nil
 }
