@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/beevik/etree"
 )
 
 type Text struct {
@@ -86,8 +88,6 @@ func InspectDocx(path string) error {
 	return fmt.Errorf("word/document.xml not found")
 }
 
-
-
 func ReadDocx(path string) (*Document, error) {
 	reader, err := zip.OpenReader(path)
 	if err != nil {
@@ -111,6 +111,33 @@ func ReadDocx(path string) (*Document, error) {
 			return nil, err
 		}
 
+		// Parse full Word XML using etree
+		xmlDoc := etree.NewDocument()
+
+		err = xmlDoc.ReadFromBytes(data)
+		if err != nil {
+			return nil, fmt.Errorf("error reading XML with etree: %w", err)
+		}
+
+		// Find every table, including nested tables
+		tables := xmlDoc.FindElements("//w:tbl")
+
+		fmt.Println("Tables found with etree:", len(tables))
+
+		for tableIndex, table := range tables {
+			fmt.Printf("\nETREE TABLE %d:\n", tableIndex)
+
+			textElements := table.FindElements(".//w:t")
+
+			for _, textElement := range textElements {
+				fmt.Print(textElement.Text())
+				fmt.Print(" ")
+			}
+
+			fmt.Println()
+		}
+
+		// Keep your existing simplified parsing
 		var doc Document
 
 		err = xml.Unmarshal(data, &doc)
