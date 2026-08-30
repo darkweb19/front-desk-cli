@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,7 @@ func main() {
 		fmt.Println("Error getting config directory:", err)
 		return
 	}
+
 
 	appDir := filepath.Join(configDir, "tm")
 	tasksFile := filepath.Join(appDir, "tasks.json")
@@ -48,7 +50,7 @@ func main() {
 			return
 		}
 
-		err = generateReport(entries)
+		err = generateReport("./Templates.docx", "./202609012.docx", entries)
 		if err != nil {
 			fmt.Println("Error generating report:", err)
 			return
@@ -82,7 +84,7 @@ func loadEntries(tasksFile string) ([]Entry, error) {
 		if os.IsNotExist(err) {
 			// this is okay: first run
 		} else {
-			return nil, fmt.Errorf("error opening file: %v", err)
+			return nil, fmt.Errorf("error opening file: %w", err)
 		}
 	} else {
 		defer file.Close()
@@ -119,7 +121,32 @@ func saveEntries(tasksFile string, entries []Entry) error {
 
 
 
-func generateReport ( entries []Entry) error {
+func generateReport (templatePath string,outputPath string, entries []Entry) error {
+
+
+	// open the template file
+	templateFile, err := os.Open(templatePath)
+	if err != nil {
+		return fmt.Errorf("error opening template file: %w", err)
+	}
+	
+
+	// create the output file
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("error creating output file: %w", err)
+	}
+
+	// copy bytes from template to output
+	_, err = io.Copy(outputFile, templateFile)
+	if err != nil {
+		return fmt.Errorf("error copying bytes: %w", err)
+	}
+
+	//close the both files
+
+	defer templateFile.Close()
+	defer outputFile.Close()
 
 
 		for _, entry := range entries {
