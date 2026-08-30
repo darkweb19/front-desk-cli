@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/beevik/etree"
 )
@@ -149,4 +150,192 @@ func ReadDocx(path string) (*Document, error) {
 	}
 
 	return nil, fmt.Errorf("word/document.xml not found")
+}
+
+func ModifyActivityTable(path string, entries []struct {
+	Time    time.Time
+	Message string
+}) error {
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	var documentXML []byte
+
+	for _, file := range reader.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+
+		rc, err := file.Open()
+		if err != nil {
+			return err
+		}
+
+		documentXML, err = io.ReadAll(rc)
+		rc.Close()
+
+		if err != nil {
+			return err
+		}
+
+		break
+	}
+
+	if documentXML == nil {
+		return fmt.Errorf("word/document.xml not found")
+	}
+
+	xmlDoc := etree.NewDocument()
+
+	err = xmlDoc.ReadFromBytes(documentXML)
+	if err != nil {
+		return err
+	}
+
+	tables := xmlDoc.FindElements("//w:tbl")
+
+	if len(tables) < 2 {
+		return fmt.Errorf("activity table not found")
+	}
+
+	activityTable := tables[1]
+
+	rows := activityTable.FindElements("./w:tr")
+
+	fmt.Println("Activity rows found:", len(rows))
+
+	return nil
+}
+
+func InspectActivityTable(path string) error {
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	var documentXML []byte
+
+	// Find and read word/document.xml
+	for _, file := range reader.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+
+		rc, err := file.Open()
+		if err != nil {
+			return err
+		}
+
+		documentXML, err = io.ReadAll(rc)
+		rc.Close()
+
+		if err != nil {
+			return err
+		}
+
+		break
+	}
+
+	if documentXML == nil {
+		return fmt.Errorf("word/document.xml not found")
+	}
+
+	// Parse the XML with etree
+	xmlDoc := etree.NewDocument()
+
+	err = xmlDoc.ReadFromBytes(documentXML)
+	if err != nil {
+		return fmt.Errorf("error parsing XML: %w", err)
+	}
+
+	// Find all tables
+	tables := xmlDoc.FindElements("//w:tbl")
+
+	if len(tables) < 2 {
+		return fmt.Errorf("activity table not found")
+	}
+
+	// We already confirmed etree table 1
+	// is the Description of Duties Performed table.
+	activityTable := tables[1]
+
+	rows := activityTable.FindElements("./w:tr")
+
+	fmt.Println("Activity rows found:", len(rows))
+
+	if len(rows) <= 2 {
+		return fmt.Errorf("expected row 2 in activity table")
+	}
+
+	// Get the two cells from Row 2
+	row2Cells := rows[2].FindElements("./w:tc")
+
+	if len(row2Cells) < 2 {
+		return fmt.Errorf("expected 2 cells in row 2")
+	}
+
+	// Change Row 2
+	setEtreeCellText(row2Cells[0], "07:15")
+
+	setEtreeCellText(
+		row2Cells[1],
+		"Got updates from Mario and checked emails/shift reports.",
+	)
+
+	// Read the modified time cell back
+	var timeText strings.Builder
+
+	for _, textElement := range row2Cells[0].FindElements(".//w:t") {
+		timeText.WriteString(textElement.Text())
+	}
+
+	// Read the modified description cell back
+	var messageText strings.Builder
+
+	for _, textElement := range row2Cells[1].FindElements(".//w:t") {
+		messageText.WriteString(textElement.Text())
+	}
+
+	fmt.Println("Modified etree row 2:")
+	fmt.Println("Time:", timeText.String())
+	fmt.Println("Message:", messageText.String())
+
+	return nil
+}
+
+
+func setEtreeCellText(cell *etree.Element, value string) {
+	textElements := cell.FindElements(".//w:t")
+
+	// The cell already contains one or more text elements.
+	if len(textElements) > 0 {
+		textElements[0].SetText(value)
+
+		// Word may have split the original text across multiple <w:t>
+		// elements, so clear everything after the first one.
+		for _, textElement := range textElements[1:] {
+			textElement.SetText("")
+		}
+
+		return
+	}
+
+	// Empty cells may not contain a <w:t>,
+	// so create the required elements.
+	paragraph := cell.FindElement("./w:p")
+	if paragraph == nil {
+		paragraph = cell.CreateElement("w:p")
+	}
+
+	run := paragraph.FindElement("./w:r")
+	if run == nil {
+		run = paragraph.CreateElement("w:r")
+	}
+
+	text := run.CreateElement("w:t")
+	text.SetText(value)
 }

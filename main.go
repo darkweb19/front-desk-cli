@@ -157,6 +157,10 @@ func generateReport(templatePath string, outputPath string, entries []Entry) err
 		return fmt.Errorf("error populating report: %w", err)
 
 	}
+	err = inspect.InspectActivityTable(outputPath)
+if err != nil {
+	return err
+}
 
 	printActivityTable(doc)
 
