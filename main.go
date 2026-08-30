@@ -139,22 +139,22 @@ func generateReport(templatePath string, outputPath string, entries []Entry) err
 
 	//close the both files
 
-	defer templateFile.Close()
-	defer outputFile.Close()
+	templateFile.Close()
+	outputFile.Close()
 
 	for _, entry := range entries {
 		fmt.Printf("%s: %s\n", entry.Time.Format("15:04"), entry.Message)
 	}
 
-	doc, err := inspect.ReadDocx("./202609012.docx")
+	doc, err := inspect.ReadDocx(outputPath)
 	if err != nil {
-		fmt.Println("Error reading docx:", err)
+		return fmt.Errorf("error reading docx: %w", err)
 
 	}
 
 	err = populateActivityTable(doc, entries)
 	if err != nil {
-		fmt.Println("Error populating report:", err)
+		return fmt.Errorf("error populating report: %w", err)
 
 	}
 
@@ -221,7 +221,6 @@ func printActivityTable(doc *inspect.Document) {
 		}
 	}
 }
-
 
 func cellText(cell inspect.Cell) string {
 	var parts []string
