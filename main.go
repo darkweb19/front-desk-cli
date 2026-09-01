@@ -67,6 +67,12 @@ func main() {
 
 		fmt.Println("Report generated:", filename)
 
+		err = clearEntries(tasksFile)
+		if err != nil {
+			fmt.Println("Report generated, but could not clear tasks:", err)
+			return
+		}
+		fmt.Println("Tasks cleared.")
 		return
 	}
 
@@ -180,7 +186,7 @@ func generateReport(templatePath string, outputPath string, entries []Entry) err
 	if err != nil {
 		return fmt.Errorf("error setting report date: %w", err)
 	}
-	
+
 	err = inspect.WriteModifiedDocumentXML(outputPath, xmlDoc)
 	if err != nil {
 		return fmt.Errorf("error writing modified DOCX: %w", err)
@@ -206,20 +212,23 @@ func populateActivityTable(doc *inspect.Document, entries []Entry) error {
 		return fmt.Errorf("too many entries: maximum is 24, got %d", len(entries))
 	}
 
-	// Fixed second entry
+	location, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		return fmt.Errorf("error loading Toronto timezone: %w", err)
+	}
+
 	setCellText(&table.Rows[2].Cells[0], "07:15")
 	setCellText(
 		&table.Rows[2].Cells[1],
 		"Got updates from Mario and checked emails/shift reports.",
 	)
 
-	// Dynamic entries start at row 3
 	for i, entry := range entries {
 		rowIndex := i + 3
 
 		setCellText(
 			&table.Rows[rowIndex].Cells[0],
-			entry.Time.Format("15:04"),
+			entry.Time.In(location).Format("15:04"),
 		)
 
 		setCellText(
@@ -256,4 +265,19 @@ func cellText(cell inspect.Cell) string {
 	}
 
 	return strings.Join(parts, "")
+}
+
+func clearEntries(tasksFile string) error {
+	file, err := os.Create(tasksFile)
+	if err != nil {
+		return fmt.Errorf("error clearing tasks file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = file.WriteString("[]")
+	if err != nil {
+		return fmt.Errorf("error writing empty task list: %w", err)
+	}
+
+	return nil
 }
