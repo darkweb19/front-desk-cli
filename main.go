@@ -42,18 +42,30 @@ func main() {
 	if os.Args[1] == "--generate" {
 
 		fmt.Println("Generate command detected")
-		entries, err := loadEntries(tasksFile)
 
+		entries, err := loadEntries(tasksFile)
 		if err != nil {
 			fmt.Println("Error loading entries:", err)
 			return
 		}
 
-		err = generateReport("./Templates.docx", "./202609012.docx", entries)
+		location, err := time.LoadLocation("America/Toronto")
+		if err != nil {
+			fmt.Println("Error loading Toronto timezone:", err)
+			return
+		}
+
+		now := time.Now().In(location)
+
+		filename := now.Format("20060102") + "2.docx"
+
+		err = generateReport("./Templates.docx", filename, entries)
 		if err != nil {
 			fmt.Println("Error generating report:", err)
 			return
 		}
+
+		fmt.Println("Report generated:", filename)
 
 		return
 	}
@@ -118,51 +130,61 @@ func saveEntries(tasksFile string, entries []Entry) error {
 }
 
 func generateReport(templatePath string, outputPath string, entries []Entry) error {
-
-	// open the template file
 	templateFile, err := os.Open(templatePath)
 	if err != nil {
 		return fmt.Errorf("error opening template file: %w", err)
 	}
 
-	// create the output file
 	outputFile, err := os.Create(outputPath)
 	if err != nil {
+		templateFile.Close()
 		return fmt.Errorf("error creating output file: %w", err)
 	}
 
-	// copy bytes from template to output
 	_, err = io.Copy(outputFile, templateFile)
-	if err != nil {
-		return fmt.Errorf("error copying bytes: %w", err)
-	}
-
-	//close the both files
 
 	templateFile.Close()
 	outputFile.Close()
 
-	for _, entry := range entries {
-		fmt.Printf("%s: %s\n", entry.Time.Format("15:04"), entry.Message)
+	if err != nil {
+		return fmt.Errorf("error copying bytes: %w", err)
 	}
 
+	// Debug representation
 	doc, err := inspect.ReadDocx(outputPath)
 	if err != nil {
 		return fmt.Errorf("error reading docx: %w", err)
-
 	}
 
 	err = populateActivityTable(doc, entries)
 	if err != nil {
 		return fmt.Errorf("error populating report: %w", err)
-
 	}
-	err = inspect.InspectActivityTable(outputPath)
-if err != nil {
-	return err
-}
 
 	printActivityTable(doc)
+
+	// Actual Word XML modification
+	xmlDoc, err := inspect.InspectActivityTable(outputPath)
+	if err != nil {
+		return fmt.Errorf("error modifying activity XML: %w", err)
+	}
+
+	location, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		return fmt.Errorf("error loading Toronto timezone: %w", err)
+	}
+
+	reportDate := time.Now().In(location).Format("02 January, 2006.")
+
+	err = inspect.SetReportDate(xmlDoc, reportDate)
+	if err != nil {
+		return fmt.Errorf("error setting report date: %w", err)
+	}
+	
+	err = inspect.WriteModifiedDocumentXML(outputPath, xmlDoc)
+	if err != nil {
+		return fmt.Errorf("error writing modified DOCX: %w", err)
+	}
 
 	return nil
 }

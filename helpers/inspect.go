@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -210,10 +211,10 @@ func ModifyActivityTable(path string, entries []struct {
 	return nil
 }
 
-func InspectActivityTable(path string) error {
+func InspectActivityTable(path string) (*etree.Document, error) {
 	reader, err := zip.OpenReader(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer reader.Close()
 
@@ -227,21 +228,21 @@ func InspectActivityTable(path string) error {
 
 		rc, err := file.Open()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		documentXML, err = io.ReadAll(rc)
 		rc.Close()
 
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("error reading word/document.xml: %w", err)
 		}
 
 		break
 	}
 
 	if documentXML == nil {
-		return fmt.Errorf("word/document.xml not found")
+		return nil, fmt.Errorf("word/document.xml not found")
 	}
 
 	// Parse the XML with etree
@@ -249,14 +250,14 @@ func InspectActivityTable(path string) error {
 
 	err = xmlDoc.ReadFromBytes(documentXML)
 	if err != nil {
-		return fmt.Errorf("error parsing XML: %w", err)
+		return nil, fmt.Errorf("error parsing XML from word/document.xml: %w", err)
 	}
 
 	// Find all tables
 	tables := xmlDoc.FindElements("//w:tbl")
 
 	if len(tables) < 2 {
-		return fmt.Errorf("activity table not found")
+		return nil, fmt.Errorf("activity table not found")
 	}
 
 	// We already confirmed etree table 1
@@ -268,14 +269,14 @@ func InspectActivityTable(path string) error {
 	fmt.Println("Activity rows found:", len(rows))
 
 	if len(rows) <= 2 {
-		return fmt.Errorf("expected row 2 in activity table")
+		return nil, fmt.Errorf("expected row 2 in activity table")
 	}
 
 	// Get the two cells from Row 2
 	row2Cells := rows[2].FindElements("./w:tc")
 
 	if len(row2Cells) < 2 {
-		return fmt.Errorf("expected 2 cells in row 2")
+		return nil, fmt.Errorf("expected 2 cells in row 2")
 	}
 
 	// Change Row 2
@@ -304,7 +305,7 @@ func InspectActivityTable(path string) error {
 	fmt.Println("Time:", timeText.String())
 	fmt.Println("Message:", messageText.String())
 
-	return nil
+	 return xmlDoc, nil
 }
 
 
@@ -338,4 +339,120 @@ func setEtreeCellText(cell *etree.Element, value string) {
 
 	text := run.CreateElement("w:t")
 	text.SetText(value)
+}
+
+
+func WriteModifiedDocumentXML(path string, xmlDoc *etree.Document) error {
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	tempPath := path + ".tmp"
+
+	tempFile, err := os.Create(tempPath)
+	if err != nil {
+		return err
+	}
+
+	zipWriter := zip.NewWriter(tempFile)
+
+	modifiedXML, err := xmlDoc.WriteToBytes()
+	if err != nil {
+		zipWriter.Close()
+		tempFile.Close()
+		return err
+	}
+
+	for _, file := range reader.File {
+		header := file.FileHeader
+
+		writer, err := zipWriter.CreateHeader(&header)
+		if err != nil {
+			zipWriter.Close()
+			tempFile.Close()
+			return err
+		}
+
+		if file.Name == "word/document.xml" {
+			_, err = writer.Write(modifiedXML)
+			if err != nil {
+				zipWriter.Close()
+				tempFile.Close()
+				return err
+			}
+
+			continue
+		}
+
+		rc, err := file.Open()
+		if err != nil {
+			zipWriter.Close()
+			tempFile.Close()
+			return err
+		}
+
+		_, err = io.Copy(writer, rc)
+		rc.Close()
+
+		if err != nil {
+			zipWriter.Close()
+			tempFile.Close()
+			return err
+		}
+	}
+
+	err = zipWriter.Close()
+	if err != nil {
+		tempFile.Close()
+		return err
+	}
+
+	err = tempFile.Close()
+	if err != nil {
+		return err
+	}
+
+	err = os.Remove(path)
+	if err != nil {
+		return err
+	}
+
+	err = os.Rename(tempPath, path)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+
+func SetReportDate(xmlDoc *etree.Document, dateValue string) error {
+	tables := xmlDoc.FindElements("//w:tbl")
+
+	if len(tables) < 1 {
+		return fmt.Errorf("header table not found")
+	}
+
+	headerTable := tables[0]
+
+	rows := headerTable.FindElements("./w:tr")
+	if len(rows) < 3 {
+		return fmt.Errorf("header row not found")
+	}
+
+	cells := rows[2].FindElements("./w:tc")
+	if len(cells) < 2 {
+		return fmt.Errorf("date cell not found")
+	}
+
+	dateCell := cells[1]
+
+	setEtreeCellText(
+		dateCell,
+		"Date: "+dateValue,
+	)
+
+	return nil
 }
