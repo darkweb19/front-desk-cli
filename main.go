@@ -174,11 +174,26 @@ func generateReport(templatePath string, outputPath string, entries []Entry) err
 	if err != nil {
 		return fmt.Errorf("error modifying activity XML: %w", err)
 	}
-
 	location, err := time.LoadLocation("America/Toronto")
+if err != nil {
+	return fmt.Errorf("error loading Toronto timezone: %w", err)
+}
+
+	for i, entry := range entries {
+	rowIndex := i + 3
+
+	err = inspect.SetActivityRow(
+		xmlDoc,
+		rowIndex,
+		entry.Time.In(location).Format("15:04"),
+		entry.Message,
+	)
 	if err != nil {
-		return fmt.Errorf("error loading Toronto timezone: %w", err)
+		return fmt.Errorf("error setting activity row: %w", err)
 	}
+}
+
+
 
 	reportDate := time.Now().In(location).Format("02 January, 2006.")
 

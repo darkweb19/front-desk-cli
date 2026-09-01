@@ -341,19 +341,18 @@ func setEtreeCellText(cell *etree.Element, value string) {
 	text.SetText(value)
 }
 
-
 func WriteModifiedDocumentXML(path string, xmlDoc *etree.Document) error {
 	reader, err := zip.OpenReader(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("error opening DOCX: %w", err)
 	}
-	defer reader.Close()
 
 	tempPath := path + ".tmp"
 
 	tempFile, err := os.Create(tempPath)
 	if err != nil {
-		return err
+		reader.Close()
+		return fmt.Errorf("error creating temporary DOCX: %w", err)
 	}
 
 	zipWriter := zip.NewWriter(tempFile)
@@ -362,7 +361,8 @@ func WriteModifiedDocumentXML(path string, xmlDoc *etree.Document) error {
 	if err != nil {
 		zipWriter.Close()
 		tempFile.Close()
-		return err
+		reader.Close()
+		return fmt.Errorf("error generating modified XML: %w", err)
 	}
 
 	for _, file := range reader.File {
@@ -372,25 +372,30 @@ func WriteModifiedDocumentXML(path string, xmlDoc *etree.Document) error {
 		if err != nil {
 			zipWriter.Close()
 			tempFile.Close()
-			return err
+			reader.Close()
+			return fmt.Errorf("error creating ZIP entry: %w", err)
 		}
 
+		// Replace only word/document.xml
 		if file.Name == "word/document.xml" {
 			_, err = writer.Write(modifiedXML)
 			if err != nil {
 				zipWriter.Close()
 				tempFile.Close()
-				return err
+				reader.Close()
+				return fmt.Errorf("error writing modified document.xml: %w", err)
 			}
 
 			continue
 		}
 
+		// Copy every other DOCX file unchanged
 		rc, err := file.Open()
 		if err != nil {
 			zipWriter.Close()
 			tempFile.Close()
-			return err
+			reader.Close()
+			return fmt.Errorf("error opening ZIP entry %s: %w", file.Name, err)
 		}
 
 		_, err = io.Copy(writer, rc)
@@ -399,29 +404,36 @@ func WriteModifiedDocumentXML(path string, xmlDoc *etree.Document) error {
 		if err != nil {
 			zipWriter.Close()
 			tempFile.Close()
-			return err
+			reader.Close()
+			return fmt.Errorf("error copying ZIP entry %s: %w", file.Name, err)
 		}
 	}
 
-	err = zipWriter.Close()
-	if err != nil {
+	// Finish writing the new DOCX
+	if err := zipWriter.Close(); err != nil {
 		tempFile.Close()
-		return err
+		reader.Close()
+		return fmt.Errorf("error closing ZIP writer: %w", err)
 	}
 
-	err = tempFile.Close()
-	if err != nil {
-		return err
+	if err := tempFile.Close(); err != nil {
+		reader.Close()
+		return fmt.Errorf("error closing temporary DOCX: %w", err)
 	}
 
-	err = os.Remove(path)
-	if err != nil {
-		return err
+	// CRITICAL FOR WINDOWS:
+	// Close the original DOCX before trying to delete it.
+	if err := reader.Close(); err != nil {
+		return fmt.Errorf("error closing original DOCX: %w", err)
 	}
 
-	err = os.Rename(tempPath, path)
-	if err != nil {
-		return err
+	// Replace original with modified version
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("error removing original DOCX: %w", err)
+	}
+
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("error replacing original DOCX: %w", err)
 	}
 
 	return nil
@@ -453,6 +465,38 @@ func SetReportDate(xmlDoc *etree.Document, dateValue string) error {
 		dateCell,
 		"Date: "+dateValue,
 	)
+
+	return nil
+}
+
+func SetActivityRow(
+	xmlDoc *etree.Document,
+	rowIndex int,
+	timeValue string,
+	message string,
+) error {
+
+	tables := xmlDoc.FindElements("//w:tbl")
+
+	if len(tables) < 2 {
+		return fmt.Errorf("activity table not found")
+	}
+
+	activityTable := tables[1]
+	rows := activityTable.FindElements("./w:tr")
+
+	if rowIndex >= len(rows) {
+		return fmt.Errorf("row %d does not exist", rowIndex)
+	}
+
+	cells := rows[rowIndex].FindElements("./w:tc")
+
+	if len(cells) < 2 {
+		return fmt.Errorf("row %d does not contain two cells", rowIndex)
+	}
+
+	setEtreeCellText(cells[0], timeValue)
+	setEtreeCellText(cells[1], message)
 
 	return nil
 }
