@@ -1,9 +1,9 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +15,9 @@ type Entry struct {
 	Time    time.Time
 	Message string
 }
+
+//go:embed Templates.docx
+var templateData []byte
 
 func main() {
 
@@ -59,7 +62,7 @@ func main() {
 
 		filename := now.Format("20060102") + "2.docx"
 
-		err = generateReport("./Templates.docx", filename, entries)
+		err = generateReport( filename, entries)
 		if err != nil {
 			fmt.Println("Error generating report:", err)
 			return
@@ -135,25 +138,10 @@ func saveEntries(tasksFile string, entries []Entry) error {
 	return nil
 }
 
-func generateReport(templatePath string, outputPath string, entries []Entry) error {
-	templateFile, err := os.Open(templatePath)
+func generateReport(outputPath string, entries []Entry) error {
+	err := os.WriteFile(outputPath, templateData, 0644)
 	if err != nil {
-		return fmt.Errorf("error opening template file: %w", err)
-	}
-
-	outputFile, err := os.Create(outputPath)
-	if err != nil {
-		templateFile.Close()
-		return fmt.Errorf("error creating output file: %w", err)
-	}
-
-	_, err = io.Copy(outputFile, templateFile)
-
-	templateFile.Close()
-	outputFile.Close()
-
-	if err != nil {
-		return fmt.Errorf("error copying bytes: %w", err)
+		return fmt.Errorf("error creating report from embedded template: %w", err)
 	}
 
 	// Debug representation
@@ -174,28 +162,29 @@ func generateReport(templatePath string, outputPath string, entries []Entry) err
 	if err != nil {
 		return fmt.Errorf("error modifying activity XML: %w", err)
 	}
+
 	location, err := time.LoadLocation("America/Toronto")
-if err != nil {
-	return fmt.Errorf("error loading Toronto timezone: %w", err)
-}
+	if err != nil {
+		return fmt.Errorf("error loading Toronto timezone: %w", err)
+	}
 
 	for i, entry := range entries {
-	rowIndex := i + 3
+		rowIndex := i + 3
 
-	err = inspect.SetActivityRow(
-		xmlDoc,
-		rowIndex,
-		entry.Time.In(location).Format("15:04"),
-		entry.Message,
-	)
-	if err != nil {
-		return fmt.Errorf("error setting activity row: %w", err)
+		err = inspect.SetActivityRow(
+			xmlDoc,
+			rowIndex,
+			entry.Time.In(location).Format("15:04"),
+			entry.Message,
+		)
+		if err != nil {
+			return fmt.Errorf("error setting activity row: %w", err)
+		}
 	}
-}
 
-
-
-	reportDate := time.Now().In(location).Format("02 January, 2006.")
+	reportDate := time.Now().
+		In(location).
+		Format("02 January, 2006.")
 
 	err = inspect.SetReportDate(xmlDoc, reportDate)
 	if err != nil {
