@@ -32,6 +32,16 @@ Generate the shift report:
 tm --generate
 ```
 
+Review or correct saved entries:
+
+```bash
+tm --list
+tm --edit 14:30 "Corrected activity description"
+```
+
+`--edit` matches the most recent entry at that Toronto time and changes only
+its description. The original timestamp is preserved.
+
 ## How It Works
 
 When you run:
@@ -106,6 +116,24 @@ tm --generate
 ```
 
 This loads the stored entries and generates the shift report.
+
+### Maintain Entries
+
+```bash
+tm --list
+tm --edit 14:30 "Corrected activity description"
+tm --clear
+```
+
+### Upgrade
+
+```bash
+tm --version
+tm --upgrade
+```
+
+Upgrades are downloaded from the latest GitHub release and verified against
+the published SHA-256 checksum before replacing the installed executable.
 
 ## Workflow
 
@@ -188,6 +216,38 @@ Once the executable is available in your system `PATH`, you can run it from any 
 tm "Completed lobby patrol"
 ```
 
+### Install from a GitHub Release
+
+Windows PowerShell:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/darkweb19/front-desk-cli/main/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+The script installs `tm.exe` under `%LOCALAPPDATA%\Programs\tm` and adds that
+directory to the user PATH when necessary.
+
+Linux or macOS:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/darkweb19/front-desk-cli/main/install.sh
+sh install.sh
+```
+
+The script detects the OS and architecture, verifies the release checksum, and
+installs `tm` under `~/.local/bin`.
+
+### Publish a Release
+
+Pushing a tag beginning with `v` verifies the project, cross-compiles supported
+binaries, creates `SHA256SUMS`, and publishes a GitHub release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## Current Status
 
 Implemented:
@@ -199,6 +259,9 @@ Implemented:
 * Automatic report date updates
 * Activity-table population
 * Windows-compatible file replacement
+* Toronto-time task listing and editing
+* Checksum-verified native installation and self-upgrades
+* Tagged GitHub release automation
 
 ## Why This Exists
 
