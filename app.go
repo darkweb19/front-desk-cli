@@ -74,6 +74,11 @@ func (app application) run(args []string) error {
 	if args[0] == "--edit" || args[0] == "-e" {
 		return app.editTask(store, args[1:])
 	}
+	
+	if args[0] == "--undo"  {
+		return app.undoRecentTask(store)
+	}
+
 
 	items, err := store.Load()
 	if err != nil {
@@ -202,5 +207,21 @@ func (app application) upgradeVersion() error {
 	}
 
 	fmt.Fprintln(app.stdout, "Upgraded to:", result.ToVersion)
+	return nil
+}
+
+func (app application) undoRecentTask(store entries.Store) error {
+	items, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("error loading entries: %w", err)
+	}
+	if len(items) == 0 {
+		return errors.New("no tasks to undo")
+	}
+	items = items[:len(items)-1]
+	if err := store.Save(items); err != nil {
+		return fmt.Errorf("error saving entries: %w", err)
+	}
+	fmt.Fprintln(app.stdout, "Recent task undone.")
 	return nil
 }
