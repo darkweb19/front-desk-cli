@@ -1,0 +1,9 @@
+# Generated reports (the embedded source template remains tracked)
+*.docx
+!Templates.docx
+
+# Local build and temporary files
+tm
+tm.exe
+*.tmp
+*.previous

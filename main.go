@@ -2,286 +2,37 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
-	inspect "tm/helpers"
 )
-
-type Entry struct {
-	Time    time.Time
-	Message string
-}
 
 //go:embed Templates.docx
 var templateData []byte
 
 func main() {
-
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		fmt.Println("Error getting config directory:", err)
-		return
+		fmt.Fprintln(os.Stderr, "Error getting config directory:", err)
+		os.Exit(1)
 	}
 
-	appDir := filepath.Join(configDir, "tm")
-	tasksFile := filepath.Join(appDir, "tasks.json")
-
-	err = os.MkdirAll(appDir, 0755)
+	outputDir, err := os.Getwd()
 	if err != nil {
-		fmt.Println("Error creating app directory:", err)
-		return
+		fmt.Fprintln(os.Stderr, "Error getting current directory:", err)
+		os.Exit(1)
 	}
 
-	if len(os.Args) < 2 {
-		fmt.Println("Please provide an argument.")
-		return
+	app := application{
+		configDir: configDir,
+		outputDir: outputDir,
+		template:  templateData,
+		now:       time.Now,
+		stdout:    os.Stdout,
 	}
 
-	// generate command
-	if os.Args[1] == "--generate" {
-
-		fmt.Println("Generate command detected")
-
-		entries, err := loadEntries(tasksFile)
-		if err != nil {
-			fmt.Println("Error loading entries:", err)
-			return
-		}
-
-		location, err := time.LoadLocation("America/Toronto")
-		if err != nil {
-			fmt.Println("Error loading Toronto timezone:", err)
-			return
-		}
-
-		now := time.Now().In(location)
-
-		filename := now.Format("20060102") + "2.docx"
-
-		err = generateReport( filename, entries)
-		if err != nil {
-			fmt.Println("Error generating report:", err)
-			return
-		}
-
-		fmt.Println("Report generated:", filename)
-
-		err = clearEntries(tasksFile)
-		if err != nil {
-			fmt.Println("Report generated, but could not clear tasks:", err)
-			return
-		}
-		fmt.Println("Tasks cleared.")
-		return
+	if err := app.run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	entries, err := loadEntries(tasksFile)
-
-	if err != nil {
-		fmt.Println("Error loading entries:", err)
-		return
-	}
-	entries = append(entries, Entry{Time: time.Now(), Message: strings.Join(os.Args[1:], " ")})
-
-	err = saveEntries(tasksFile, entries)
-	if err != nil {
-		fmt.Println("Error saving entries:", err)
-		return
-	}
-	fmt.Println(entries)
-
-}
-
-func loadEntries(tasksFile string) ([]Entry, error) {
-
-	entries := []Entry{}
-	file, err := os.Open(tasksFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// this is okay: first run
-		} else {
-			return nil, fmt.Errorf("error opening file: %w", err)
-		}
-	} else {
-		defer file.Close()
-
-		decoder := json.NewDecoder(file)
-		err = decoder.Decode(&entries)
-		if err != nil {
-
-			return nil, fmt.Errorf("error decoding JSON: %v", err)
-		}
-
-	}
-	return entries, nil
-
-}
-
-func saveEntries(tasksFile string, entries []Entry) error {
-	file, err := os.Create(tasksFile)
-	if err != nil {
-		return fmt.Errorf("error creating file: %w", err)
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	err = encoder.Encode(entries)
-	if err != nil {
-		return fmt.Errorf("error encoding JSON: %v", err)
-	}
-
-	return nil
-}
-
-func generateReport(outputPath string, entries []Entry) error {
-	err := os.WriteFile(outputPath, templateData, 0644)
-	if err != nil {
-		return fmt.Errorf("error creating report from embedded template: %w", err)
-	}
-
-	// Debug representation
-	doc, err := inspect.ReadDocx(outputPath)
-	if err != nil {
-		return fmt.Errorf("error reading docx: %w", err)
-	}
-
-	err = populateActivityTable(doc, entries)
-	if err != nil {
-		return fmt.Errorf("error populating report: %w", err)
-	}
-
-	printActivityTable(doc)
-
-	// Actual Word XML modification
-	xmlDoc, err := inspect.InspectActivityTable(outputPath)
-	if err != nil {
-		return fmt.Errorf("error modifying activity XML: %w", err)
-	}
-
-	location, err := time.LoadLocation("America/Toronto")
-	if err != nil {
-		return fmt.Errorf("error loading Toronto timezone: %w", err)
-	}
-
-	for i, entry := range entries {
-		rowIndex := i + 3
-
-		err = inspect.SetActivityRow(
-			xmlDoc,
-			rowIndex,
-			entry.Time.In(location).Format("15:04"),
-			entry.Message,
-		)
-		if err != nil {
-			return fmt.Errorf("error setting activity row: %w", err)
-		}
-	}
-
-	reportDate := time.Now().
-		In(location).
-		Format("02 January, 2006.")
-
-	err = inspect.SetReportDate(xmlDoc, reportDate)
-	if err != nil {
-		return fmt.Errorf("error setting report date: %w", err)
-	}
-
-	err = inspect.WriteModifiedDocumentXML(outputPath, xmlDoc)
-	if err != nil {
-		return fmt.Errorf("error writing modified DOCX: %w", err)
-	}
-
-	return nil
-}
-
-func setCellText(cell *inspect.Cell, value string) {
-	cell.Texts = []inspect.Text{
-		{Value: value},
-	}
-}
-
-func populateActivityTable(doc *inspect.Document, entries []Entry) error {
-	if len(doc.Tables) < 2 {
-		return fmt.Errorf("activity table not found")
-	}
-
-	table := &doc.Tables[1]
-
-	if len(entries) > 24 {
-		return fmt.Errorf("too many entries: maximum is 24, got %d", len(entries))
-	}
-
-	location, err := time.LoadLocation("America/Toronto")
-	if err != nil {
-		return fmt.Errorf("error loading Toronto timezone: %w", err)
-	}
-
-	setCellText(&table.Rows[2].Cells[0], "07:15")
-	setCellText(
-		&table.Rows[2].Cells[1],
-		"Got updates from Mario and checked emails/shift reports.",
-	)
-
-	for i, entry := range entries {
-		rowIndex := i + 3
-
-		setCellText(
-			&table.Rows[rowIndex].Cells[0],
-			entry.Time.In(location).Format("15:04"),
-		)
-
-		setCellText(
-			&table.Rows[rowIndex].Cells[1],
-			entry.Message,
-		)
-	}
-
-	return nil
-}
-
-func printActivityTable(doc *inspect.Document) {
-	table := doc.Tables[1]
-
-	for i, row := range table.Rows {
-		if i == 0 {
-			continue
-		}
-
-		timeText := cellText(row.Cells[0])
-		messageText := cellText(row.Cells[1])
-
-		if timeText != "" || messageText != "" {
-			fmt.Printf("Row %d: %s | %s\n", i, timeText, messageText)
-		}
-	}
-}
-
-func cellText(cell inspect.Cell) string {
-	var parts []string
-
-	for _, text := range cell.Texts {
-		parts = append(parts, text.Value)
-	}
-
-	return strings.Join(parts, "")
-}
-
-func clearEntries(tasksFile string) error {
-	file, err := os.Create(tasksFile)
-	if err != nil {
-		return fmt.Errorf("error clearing tasks file: %w", err)
-	}
-	defer file.Close()
-
-	_, err = file.WriteString("[]")
-	if err != nil {
-		return fmt.Errorf("error writing empty task list: %w", err)
-	}
-
-	return nil
 }

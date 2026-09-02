@@ -135,7 +135,8 @@ The existing fixed entries in the shift-report template remain unchanged while r
 
 ## Technology
 
-The CLI is written in Go and currently uses Go's standard library, including:
+The CLI is written in Go. It uses the standard library for command handling,
+JSON persistence, ZIP processing, and filesystem operations:
 
 ```text
 os
@@ -145,7 +146,8 @@ strings
 path/filepath
 ```
 
-No database is required.
+It also uses the existing `github.com/beevik/etree` dependency for targeted
+WordprocessingML updates inside the DOCX template. No database is required.
 
 ## Development
 
@@ -191,18 +193,12 @@ tm "Completed lobby patrol"
 Implemented:
 
 * Command-line entry logging
-* Automatic timestamps
-* JSON persistence
-* Loading previous entries
-* User configuration directory storage
-* `--generate` command handling
-
-In progress:
-
-* Word template manipulation
+* Automatic Toronto timestamps in generated reports
+* JSON persistence in the user configuration directory
+* Embedded Word template processing
 * Automatic report date updates
-* Injecting shift entries into the report table
-* Final Windows executable workflow
+* Activity-table population
+* Windows-compatible file replacement
 
 ## Why This Exists
 
