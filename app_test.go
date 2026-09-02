@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"tm/internal/entries"
+	"tm/internal/updater"
 )
 
 func TestRunRequiresArgumentWithoutCreatingAppDirectory(t *testing.T) {
@@ -139,5 +141,168 @@ func TestRunGenerateFailurePreservesEntriesAndExistingReport(t *testing.T) {
 	}
 	if !bytes.Equal(gotReport, previousReport) {
 		t.Fatal("existing report changed after failed generation")
+	}
+}
+
+func TestRunListUsesTorontoTime(t *testing.T) {
+	configDir := t.TempDir()
+	store := entries.Store{Path: filepath.Join(configDir, appDirectoryName, "tasks.json")}
+	if err := store.Save([]entries.Entry{{
+		Time:    time.Date(2026, time.January, 2, 20, 30, 0, 0, time.UTC),
+		Message: "Checked the lobby",
+	}}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var output bytes.Buffer
+	app := application{
+		configDir: configDir,
+		outputDir: t.TempDir(),
+		template:  templateData,
+		now:       time.Now,
+		stdout:    &output,
+	}
+	if err := app.run([]string{"--list"}); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got, want := output.String(), "15:30 - Checked the lobby\n"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestRunEditUpdatesMostRecentMatchingTorontoTimeAndPreservesTime(t *testing.T) {
+	configDir := t.TempDir()
+	store := entries.Store{Path: filepath.Join(configDir, appDirectoryName, "tasks.json")}
+	firstTime := time.Date(2026, time.January, 2, 19, 30, 1, 0, time.UTC)
+	secondTime := time.Date(2026, time.July, 2, 18, 30, 59, 0, time.UTC)
+	original := []entries.Entry{
+		{Time: firstTime, Message: "Earlier duplicate"},
+		{Time: secondTime, Message: "Most recent duplicate"},
+	}
+	if err := store.Save(original); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var output bytes.Buffer
+	app := application{
+		configDir: configDir,
+		outputDir: t.TempDir(),
+		template:  templateData,
+		now:       time.Now,
+		stdout:    &output,
+	}
+	if err := app.run([]string{"--edit", "14:30", "Updated", "task"}); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got[0].Message != original[0].Message {
+		t.Fatalf("first duplicate message = %q, want %q", got[0].Message, original[0].Message)
+	}
+	if got[1].Message != "Updated task" {
+		t.Fatalf("most recent duplicate message = %q, want %q", got[1].Message, "Updated task")
+	}
+	if !got[1].Time.Equal(secondTime) {
+		t.Fatalf("edited time = %v, want preserved %v", got[1].Time, secondTime)
+	}
+	if want := "Updated 14:30 - Updated task\n"; output.String() != want {
+		t.Fatalf("output = %q, want %q", output.String(), want)
+	}
+}
+
+func TestRunEditRejectsInvalidTimeAndMissingMatch(t *testing.T) {
+	configDir := t.TempDir()
+	store := entries.Store{Path: filepath.Join(configDir, appDirectoryName, "tasks.json")}
+	entry := entries.Entry{Time: time.Date(2026, time.July, 2, 18, 30, 0, 0, time.UTC), Message: "Original"}
+	if err := store.Save([]entries.Entry{entry}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	app := application{
+		configDir: configDir,
+		outputDir: t.TempDir(),
+		template:  templateData,
+		now:       time.Now,
+		stdout:    &bytes.Buffer{},
+	}
+
+	if err := app.run([]string{"--edit", "2:30", "Changed"}); err == nil || !strings.Contains(err.Error(), "24-hour format") {
+		t.Fatalf("invalid time error = %v", err)
+	}
+	if err := app.run([]string{"--edit", "14:31", "Changed"}); err == nil || !strings.Contains(err.Error(), "no task found") {
+		t.Fatalf("missing match error = %v", err)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Message != entry.Message || !got[0].Time.Equal(entry.Time) {
+		t.Fatalf("entry changed after rejected edits: %#v", got)
+	}
+}
+
+func TestRunHelpDocumentsEdit(t *testing.T) {
+	var output bytes.Buffer
+	app := application{
+		configDir: t.TempDir(),
+		outputDir: t.TempDir(),
+		template:  templateData,
+		now:       time.Now,
+		stdout:    &output,
+	}
+	if err := app.run([]string{"--help"}); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := output.String(); !strings.Contains(got, "tm --edit HH:MM <new task>") || !strings.Contains(got, "tm --upgrade") || !strings.Contains(got, "tm --version") {
+		t.Fatalf("help output = %q", got)
+	}
+}
+
+func TestRunUpgradeUsesCurrentVersion(t *testing.T) {
+	var output bytes.Buffer
+	var gotVersion string
+	app := application{
+		configDir: t.TempDir(),
+		outputDir: t.TempDir(),
+		template:  templateData,
+		now:       time.Now,
+		stdout:    &output,
+		version:   "v1.0.0",
+		upgrade: func(_ context.Context, currentVersion string) (updater.Result, error) {
+			gotVersion = currentVersion
+			return updater.Result{FromVersion: currentVersion, ToVersion: "v1.1.0", Updated: true, Deferred: true}, nil
+		},
+	}
+
+	if err := app.run([]string{"--upgrade"}); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if gotVersion != "v1.0.0" {
+		t.Fatalf("upgrade current version = %q, want v1.0.0", gotVersion)
+	}
+	if got := output.String(); got != "Upgrade downloaded: v1.1.0 (installs after tm exits)\n" {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestRunVersion(t *testing.T) {
+	var output bytes.Buffer
+	app := application{
+		configDir: t.TempDir(),
+		outputDir: t.TempDir(),
+		template:  templateData,
+		now:       time.Now,
+		stdout:    &output,
+		version:   "v1.2.3",
+	}
+
+	if err := app.run([]string{"--version"}); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := output.String(); got != "v1.2.3\n" {
+		t.Fatalf("output = %q, want v1.2.3", got)
 	}
 }

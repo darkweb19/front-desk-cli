@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"time"
+	_ "time/tzdata"
+
+	"tm/internal/updater"
 )
 
 //go:embed Templates.docx
 var templateData []byte
+
+var version = "dev"
 
 func main() {
 	configDir, err := os.UserConfigDir()
@@ -29,6 +35,10 @@ func main() {
 		template:  templateData,
 		now:       time.Now,
 		stdout:    os.Stdout,
+		version:   version,
+		upgrade: func(ctx context.Context, currentVersion string) (updater.Result, error) {
+			return updater.New("darkweb19", "front-desk-cli").Upgrade(ctx, currentVersion)
+		},
 	}
 
 	if err := app.run(os.Args[1:]); err != nil {
