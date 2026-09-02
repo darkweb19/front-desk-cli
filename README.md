@@ -216,36 +216,64 @@ Once the executable is available in your system `PATH`, you can run it from any 
 tm "Completed lobby patrol"
 ```
 
-### Install from a GitHub Release
-
-Windows PowerShell:
-
-```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/darkweb19/front-desk-cli/main/install.ps1 -OutFile install.ps1
-.\install.ps1
-```
-
-The script installs `tm.exe` under `%LOCALAPPDATA%\Programs\tm` and adds that
-directory to the user PATH when necessary.
-
-Linux or macOS:
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/darkweb19/front-desk-cli/main/install.sh
-sh install.sh
-```
-
-The script detects the OS and architecture, verifies the release checksum, and
-installs `tm` under `~/.local/bin`.
-
 ### Publish a Release
 
 Pushing a tag beginning with `v` verifies the project, cross-compiles supported
 binaries, creates `SHA256SUMS`, and publishes a GitHub release:
 
-```bash
+```powershell
+git push origin main
 git tag v1.0.0
 git push origin v1.0.0
+```
+
+Wait for the GitHub Actions release workflow to finish before using the
+installers. The installers require at least one published release.
+
+### Install on a New Machine
+
+On Windows, open PowerShell and run:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/darkweb19/front-desk-cli/main/install.ps1 -OutFile "$env:TEMP\install-tm.ps1"
+& "$env:TEMP\install-tm.ps1"
+```
+
+The script verifies the release checksum, installs `tm.exe` under
+`%LOCALAPPDATA%\Programs\tm`, and adds that directory to the user PATH when
+necessary. Open a new terminal, then verify the installation:
+
+```powershell
+tm --version
+tm "Test activity"
+tm --list
+```
+
+On Linux or macOS, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/darkweb19/front-desk-cli/main/install.sh -o /tmp/install-tm.sh
+sh /tmp/install-tm.sh
+```
+
+The script detects the OS and architecture, verifies the release checksum, and
+installs `tm` under `~/.local/bin`. If that directory is not already available
+on the command line, add it to your shell's PATH:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Verify the installation:
+
+```bash
+tm --version
+```
+
+After a newer release is published, update an installed copy with:
+
+```bash
+tm --upgrade
 ```
 
 ## Current Status
