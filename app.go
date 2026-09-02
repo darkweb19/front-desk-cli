@@ -34,8 +34,26 @@ func (app application) run(args []string) error {
 	}
 
 	store := entries.Store{Path: filepath.Join(appDir, "tasks.json")}
-	if args[0] == "--generate" {
+	if args[0] == "--generate" || args[0] == "-g" {
 		return app.generateReport(store)
+	}
+
+	if args[0] == "--clear" || args[0] == "-c" {
+		return app.clearTasks(store)
+	}
+
+	if args[0] == "--list" || args[0] == "-l" {
+		// print all the tasks in the json printed as this format 14:55 - Task Message
+		return app.listTasks(store)
+	}
+
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintln(app.stdout, "Usage: tm [--generate] [--clear] [--list] [task message]")
+		return nil
+	}
+
+	if args[0] == "--upgrade" || args[0] == "-u" {
+		return app.upgradeVersion(store)
 	}
 
 	items, err := store.Load()
@@ -80,5 +98,35 @@ func (app application) generateReport(store entries.Store) error {
 	}
 
 	fmt.Fprintln(app.stdout, "Tasks cleared.")
+	return nil
+}
+
+
+func (app application) listTasks(store entries.Store) error {
+	items, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("error loading entries: %w", err)
+	}
+	for _, item := range items {
+		fmt.Fprintln(app.stdout, item.Time.Format("15:04") + " - " + item.Message)
+	}
+	return nil
+}
+
+func (app application) clearTasks(store entries.Store) error {
+	if err := store.Clear(); err != nil {
+		return fmt.Errorf("error clearing tasks: %w", err)
+	}
+	fmt.Fprintln(app.stdout, "Tasks cleared.")
+	return nil
+}
+
+func (app application) upgradeVersion(store entries.Store) error {
+	_, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("error loading entries: %w", err)
+	}
+	fmt.Println("Upgrading is cooking")
+	// Implement version upgrade logic here
 	return nil
 }
