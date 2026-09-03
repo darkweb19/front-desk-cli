@@ -40,7 +40,11 @@ tm --edit 14:30 "Corrected activity description"
 ```
 
 `--edit` matches the most recent entry at that Toronto time and changes only
-its description. The original timestamp is preserved.
+its description. The original timestamp is preserved. If that time does not
+exist, a new entry is added on the current Toronto date in chronological order.
+
+For example, adding `11:30` to entries at `08:55`, `09:55`, `11:40`, and
+`12:55` places the new entry between `09:55` and `11:40`.
 
 ## How It Works
 
