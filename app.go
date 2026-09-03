@@ -74,11 +74,10 @@ func (app application) run(args []string) error {
 	if args[0] == "--edit" || args[0] == "-e" {
 		return app.editTask(store, args[1:])
 	}
-	
-	if args[0] == "--undo"  {
+
+	if args[0] == "--undo" {
 		return app.undoRecentTask(store)
 	}
-
 
 	items, err := store.Load()
 	if err != nil {
