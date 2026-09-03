@@ -177,7 +177,30 @@ func (app application) editTask(store entries.Store, args []string) error {
 		return nil
 	}
 
-	return fmt.Errorf("no task found at %s Toronto time", args[0])
+	now := app.now().In(location)
+	newEntry := entries.Entry{
+		Time:    time.Date(now.Year(), now.Month(), now.Day(), requestedTime.Hour(), requestedTime.Minute(), 0, 0, location),
+		Message: message,
+	}
+	requestedMinutes := requestedTime.Hour()*60 + requestedTime.Minute()
+	insertAt := len(items)
+	for index, item := range items {
+		entryTime := item.Time.In(location)
+		entryMinutes := entryTime.Hour()*60 + entryTime.Minute()
+		if entryMinutes > requestedMinutes {
+			insertAt = index
+			break
+		}
+	}
+
+	items = append(items, entries.Entry{})
+	copy(items[insertAt+1:], items[insertAt:])
+	items[insertAt] = newEntry
+	if err := store.Save(items); err != nil {
+		return fmt.Errorf("error saving entries: %w", err)
+	}
+	fmt.Fprintf(app.stdout, "Added %s - %s\n", args[0], message)
+	return nil
 }
 
 func (app application) clearTasks(store entries.Store) error {

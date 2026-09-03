@@ -213,7 +213,86 @@ func TestRunEditUpdatesMostRecentMatchingTorontoTimeAndPreservesTime(t *testing.
 	}
 }
 
-func TestRunEditRejectsInvalidTimeAndMissingMatch(t *testing.T) {
+func TestRunEditInsertsMissingTimeInChronologicalPosition(t *testing.T) {
+	location, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatalf("LoadLocation() error = %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		time     string
+		wantTask []string
+	}{
+		{name: "before", time: "08:30", wantTask: []string{"New task", "08:55 task", "09:55 task", "11:40 task", "12:55 task"}},
+		{name: "between", time: "11:30", wantTask: []string{"08:55 task", "09:55 task", "New task", "11:40 task", "12:55 task"}},
+		{name: "after", time: "13:30", wantTask: []string{"08:55 task", "09:55 task", "11:40 task", "12:55 task", "New task"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configDir := t.TempDir()
+			store := entries.Store{Path: filepath.Join(configDir, appDirectoryName, "tasks.json")}
+			original := []entries.Entry{
+				{Time: time.Date(2026, time.September, 3, 8, 55, 0, 0, location), Message: "08:55 task"},
+				{Time: time.Date(2026, time.September, 3, 9, 55, 0, 0, location), Message: "09:55 task"},
+				{Time: time.Date(2026, time.September, 3, 11, 40, 0, 0, location), Message: "11:40 task"},
+				{Time: time.Date(2026, time.September, 3, 12, 55, 0, 0, location), Message: "12:55 task"},
+			}
+			if err := store.Save(original); err != nil {
+				t.Fatalf("Save() error = %v", err)
+			}
+
+			var output bytes.Buffer
+			app := application{
+				configDir: configDir,
+				outputDir: t.TempDir(),
+				template:  templateData,
+				now: func() time.Time {
+					return time.Date(2026, time.September, 3, 15, 0, 0, 0, location)
+				},
+				stdout: &output,
+			}
+			if err := app.run([]string{"--edit", test.time, "New", "task"}); err != nil {
+				t.Fatalf("run() error = %v", err)
+			}
+
+			got, err := store.Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if len(got) != len(test.wantTask) {
+				t.Fatalf("saved entries = %d, want %d", len(got), len(test.wantTask))
+			}
+			for index, want := range test.wantTask {
+				if got[index].Message != want {
+					t.Fatalf("entry %d message = %q, want %q", index, got[index].Message, want)
+				}
+			}
+
+			requestedTime, err := time.Parse("15:04", test.time)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			var added entries.Entry
+			for _, item := range got {
+				if item.Message == "New task" {
+					added = item
+					break
+				}
+			}
+			addedToronto := added.Time.In(location)
+			if addedToronto.Year() != 2026 || addedToronto.Month() != time.September || addedToronto.Day() != 3 || addedToronto.Hour() != requestedTime.Hour() || addedToronto.Minute() != requestedTime.Minute() {
+				t.Fatalf("added time = %v, want 2026-09-03 %s Toronto", addedToronto, test.time)
+			}
+			if want := "Added " + test.time + " - New task\n"; output.String() != want {
+				t.Fatalf("output = %q, want %q", output.String(), want)
+			}
+		})
+	}
+}
+
+func TestRunEditRejectsInvalidTime(t *testing.T) {
 	configDir := t.TempDir()
 	store := entries.Store{Path: filepath.Join(configDir, appDirectoryName, "tasks.json")}
 	entry := entries.Entry{Time: time.Date(2026, time.July, 2, 18, 30, 0, 0, time.UTC), Message: "Original"}
@@ -231,16 +310,13 @@ func TestRunEditRejectsInvalidTimeAndMissingMatch(t *testing.T) {
 	if err := app.run([]string{"--edit", "2:30", "Changed"}); err == nil || !strings.Contains(err.Error(), "24-hour format") {
 		t.Fatalf("invalid time error = %v", err)
 	}
-	if err := app.run([]string{"--edit", "14:31", "Changed"}); err == nil || !strings.Contains(err.Error(), "no task found") {
-		t.Fatalf("missing match error = %v", err)
-	}
 
 	got, err := store.Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 	if len(got) != 1 || got[0].Message != entry.Message || !got[0].Time.Equal(entry.Time) {
-		t.Fatalf("entry changed after rejected edits: %#v", got)
+		t.Fatalf("entry changed after rejected edit: %#v", got)
 	}
 }
 
